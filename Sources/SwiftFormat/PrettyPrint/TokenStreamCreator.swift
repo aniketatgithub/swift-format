@@ -4323,17 +4323,26 @@ private final class TokenStreamCreator: SyntaxVisitor {
       let base = postfixIfExpr.base
     {
       // For postfix-if expressions with bases (i.e., they aren't the first `#if` nested inside
-      // another `#if`), add contextual breaks before the top-level clauses (and the terminating
+      // another `#if`), add breaks before the top-level clauses (and the terminating
       // `#endif`) so that they nest or line-up properly based on the preceding node. We don't do
       // this for initial nested `#if`s because they will already get open/close breaks to control
       // their indentation from their parent clause.
+      //
+      // When conditional compilation blocks are not indented, the directives line up with the
+      // enclosing statement instead of being treated as continuations of the expression chain,
+      // matching how the clause contents are laid out by the `.same` breaks below.
       before(postfixIfExpr.firstToken(viewMode: .sourceAccurate), tokens: .contextualBreakingStart)
       after(postfixIfExpr.lastToken(viewMode: .sourceAccurate), tokens: .contextualBreakingEnd)
 
+      let directiveBreakKind: BreakKind =
+        config.indentConditionalCompilationBlocks ? .contextual : .same
       for clause in postfixIfExpr.config.clauses {
-        before(clause.poundKeyword, tokens: .break(.contextual, size: 0, newlines: .soft))
+        before(clause.poundKeyword, tokens: .break(directiveBreakKind, size: 0, newlines: .soft))
       }
-      before(postfixIfExpr.config.poundEndif, tokens: .break(.contextual, size: 0, newlines: .soft))
+      before(
+        postfixIfExpr.config.poundEndif,
+        tokens: .break(directiveBreakKind, size: 0, newlines: .soft)
+      )
 
       return insertContextualBreaks(base, isTopLevel: false)
     } else if let callingExpr = expr.asProtocol(CallingExprSyntaxProtocol.self) {

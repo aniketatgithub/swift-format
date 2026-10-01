@@ -129,6 +129,63 @@ final class IfConfigTests: PrettyPrintTestCase {
     assertPrettyPrintEqual(input: input, expected: expected, linelength: 45, configuration: config)
   }
 
+  func testPostfixPoundIfNoIndentation() {
+    let input =
+      """
+      func foo() {
+        booper
+          #if BOOP
+        .boop("hi")
+          #else
+        .boop("there")
+          #endif
+      }
+
+      func chained() {
+        V()
+          .padding()
+          #if os(iOS)
+        .iOSOnly()
+          #elseif os(macOS)
+        .macOnly()
+          #else
+        .fallback()
+          #endif
+          .common()
+      }
+      """
+
+    let expected =
+      """
+      func foo() {
+        booper
+        #if BOOP
+        .boop("hi")
+        #else
+        .boop("there")
+        #endif
+      }
+
+      func chained() {
+        V()
+          .padding()
+        #if os(iOS)
+        .iOSOnly()
+        #elseif os(macOS)
+        .macOnly()
+        #else
+        .fallback()
+        #endif
+        .common()
+      }
+
+      """
+
+    var config = Configuration.forTesting
+    config.indentConditionalCompilationBlocks = false
+    assertPrettyPrintEqual(input: input, expected: expected, linelength: 45, configuration: config)
+  }
+
   func testPoundIfAroundMembers() {
     let input =
       """
