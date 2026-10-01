@@ -3459,6 +3459,31 @@ private final class TokenStreamCreator: SyntaxVisitor {
     return config.lineBreakBeforeEachGenericRequirement ? .consistent : .inconsistent
   }
 
+  /// Returns true if a line break must never be placed immediately before the given token,
+  /// because doing so would detach an opening delimiter from its callee and change how the
+  /// expression parses: the `(` of a function call or macro expansion, or the `[` of a
+  /// subscript, must stay on the same line as the called expression. This matters when a
+  /// block comment trails the callee, since such comments are normally followed by a
+  /// discretionary break that would otherwise be allowed to fire here.
+  private func isDelimiterGluedToCallee(_ token: TokenSyntax) -> Bool {
+    if let callExpr = token.parent?.as(FunctionCallExprSyntax.self),
+      callExpr.leftParen?.id == token.id
+    {
+      return true
+    }
+    if let subscriptExpr = token.parent?.as(SubscriptCallExprSyntax.self),
+      subscriptExpr.leftSquare.id == token.id
+    {
+      return true
+    }
+    if let macroExpansionExpr = token.parent?.as(MacroExpansionExprSyntax.self),
+      macroExpansionExpr.leftParen?.id == token.id
+    {
+      return true
+    }
+    return false
+  }
+
   private func afterTokensForTrailingComment(
     _ token: TokenSyntax
   ) -> (isLineComment: Bool, tokens: [Token]) {
@@ -3485,17 +3510,24 @@ private final class TokenStreamCreator: SyntaxVisitor {
       )
 
     case .blockComment(let text):
-      return (
-        false,
-        [
-          .space(size: 1, flexible: true),
-          .comment(Comment(kind: .block, leadingIndent: nil, text: text), wasEndOfLine: false),
-          // We place a size-0 break after the comment to allow a discretionary newline after
-          // the comment if the user places one here but the comment is otherwise adjacent to a
-          // text token.
-          .break(.same, size: 0),
-        ]
-      )
+      // A break after the comment would normally allow a discretionary newline here, but if the
+      // next token is the opening delimiter of a call, subscript, or macro expansion, breaking
+      // would detach it from its callee and change how the expression parses (for example,
+      // `foo()` would become `foo` followed by a separate `()` expression), so the break is
+      // omitted in that case.
+      let delimiterFollows =
+        token.nextToken(viewMode: .sourceAccurate).map(isDelimiterGluedToCallee) ?? false
+      var tokens: [Token] = [
+        .space(size: 1, flexible: true),
+        .comment(Comment(kind: .block, leadingIndent: nil, text: text), wasEndOfLine: false),
+      ]
+      if !delimiterFollows {
+        // We place a size-0 break after the comment to allow a discretionary newline after
+        // the comment if the user places one here but the comment is otherwise adjacent to a
+        // text token.
+        tokens.append(.break(.same, size: 0))
+      }
+      return (false, tokens)
 
     default:
       return (false, [])
@@ -3603,7 +3635,10 @@ private final class TokenStreamCreator: SyntaxVisitor {
           generateEnableFormattingIfNecessary(position..<position + piece.sourceLength)
           appendToken(.comment(Comment(kind: .block, leadingIndent: leadingIndent, text: text), wasEndOfLine: false))
           generateDisableFormattingIfNecessary(position + piece.sourceLength)
-          // There is always a break after the comment to allow a discretionary newline after it.
+          // There is always a break after the comment to allow a discretionary newline after it,
+          // unless the token being written is the opening delimiter of a call, subscript, or
+          // macro expansion, in which case breaking would detach it from its callee and change
+          // how the expression parses.
           var breakSize = 0
           if index + 1 < trivia.endIndex {
             let nextPiece = trivia[index + 1]
@@ -3611,7 +3646,9 @@ private final class TokenStreamCreator: SyntaxVisitor {
             // case the comment is followed by another token instead of a newline.
             if case .spaces = nextPiece { breakSize = 1 }
           }
-          appendToken(.break(.same, size: breakSize))
+          if !isDelimiterGluedToCallee(token) {
+            appendToken(.break(.same, size: breakSize))
+          }
           isStartOfFile = false
           requiresNextNewline = isStandaloneLeadingComment
         } else {

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 import SwiftFormat
+import _SwiftFormatTestSupport
 
 final class FunctionCallTests: PrettyPrintTestCase {
   func testBasicFunctionCalls_noPackArguments() {
@@ -391,5 +392,29 @@ final class FunctionCallTests: PrettyPrintTestCase {
       """
 
     assertPrettyPrintEqual(input: input, expected: expected, linelength: 23)
+  }
+
+  func testBlockCommentBetweenCalleeAndParensDoesNotBreak() {
+    // A block comment trailing the called expression must not introduce a line break before the
+    // opening parenthesis: the argument list would move to the next line and the expression
+    // would no longer parse as a call.
+    let input =
+      """
+      struct MyError: Error {}
+      func f() throws {
+          throw MyError/*Some comment; why not? Swift syntax allows it, though it's very very weird…*/()
+      }
+      """
+
+    let expected =
+      "struct MyError: Error {}\n"
+        + "func f() throws {\n"
+        + "\tthrow\n"
+        + "\t\tMyError /*Some comment; why not? Swift syntax allows it, though it's very very weird…*/()\n"
+        + "}\n"
+
+    var config = Configuration.forTesting
+    config.indentation = .tabs(1)
+    assertPrettyPrintEqual(input: input, expected: expected, linelength: 80, configuration: config)
   }
 }

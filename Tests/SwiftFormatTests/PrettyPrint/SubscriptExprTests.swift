@@ -10,6 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+import SwiftFormat
+import _SwiftFormatTestSupport
+
 final class SubscriptExprTests: PrettyPrintTestCase {
   func testBasicSubscriptGetters() {
     let input =
@@ -166,5 +169,28 @@ final class SubscriptExprTests: PrettyPrintTestCase {
       """
 
     assertPrettyPrintEqual(input: input, expected: expected, linelength: 20)
+  }
+
+  func testBlockCommentBetweenBaseAndBracketDoesNotBreak() {
+    // A block comment trailing the subscript base must not introduce a line break before the
+    // opening bracket: the subscript would move to the next line and parse as an array literal
+    // instead.
+    let input =
+      """
+      func g(_ d: [String: Int]) -> Int {
+          return d/*Some comment; why not? Swift syntax allows it, though it is very very weird…*/["key"] ?? 0
+      }
+      """
+
+    let expected =
+      "func g(_ d: [String: Int]) -> Int {\n"
+        + "\treturn\n"
+        + "\t\td /*Some comment; why not? Swift syntax allows it, though it is very very weird…*/[\n"
+        + "\t\t\t\"key\"] ?? 0\n"
+        + "}\n"
+
+    var config = Configuration.forTesting
+    config.indentation = .tabs(1)
+    assertPrettyPrintEqual(input: input, expected: expected, linelength: 80, configuration: config)
   }
 }
